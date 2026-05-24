@@ -1,0 +1,57 @@
+Dataset: shopping_trends
+Shape: 3900 filas x 19 columnas
+
+Columnas:
+- Customer ID
+- Age
+- Gender
+- Item Purchased
+- Category
+- Purchase Amount (USD)
+- Location
+- Size
+- Color
+- Season
+- Review Rating
+- Subscription Status
+- Payment Method
+- Shipping Type
+- Discount Applied
+- Promo Code Used
+- Previous Purchases
+- Preferred Payment Method
+- Frequency of Purchases
+
+Valores nulos por columna (top 20):
+- Customer ID: 0
+- Age: 0
+- Gender: 0
+- Item Purchased: 0
+- Category: 0
+- Purchase Amount (USD): 0
+- Location: 0
+- Size: 0
+- Color: 0
+- Season: 0
+- Review Rating: 0
+- Subscription Status: 0
+- Payment Method: 0
+- Shipping Type: 0
+- Discount Applied: 0
+- Promo Code Used: 0
+- Previous Purchases: 0
+- Preferred Payment Method: 0
+- Frequency of Purchases: 0
+
+Duplicados totales: 0
+
+Estadistica descriptiva (numericas):
+       Customer ID          Age  Purchase Amount (USD)  Review Rating  Previous Purchases
+count  3900.000000  3900.000000            3900.000000    3900.000000         3900.000000
+mean   1950.500000    44.068462              59.764359       3.749949           25.351538
+std    1125.977353    15.207589              23.685392       0.716223           14.447125
+min       1.000000    18.000000              20.000000       2.500000            1.000000
+25%     975.750000    31.000000              39.000000       3.100000           13.000000
+50%    1950.500000    44.000000              60.000000       3.700000           25.000000
+75%    2925.250000    57.000000              81.000000       4.400000           38.000000
+max    3900.000000    70.000000             100.000000       5.000000           50.000000

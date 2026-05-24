@@ -1,0 +1,60 @@
+Dataset: telco_churn
+Shape: 7043 filas x 21 columnas
+
+Columnas:
+- customerID
+- gender
+- SeniorCitizen
+- Partner
+- Dependents
+- tenure
+- PhoneService
+- MultipleLines
+- InternetService
+- OnlineSecurity
+- OnlineBackup
+- DeviceProtection
+- TechSupport
+- StreamingTV
+- StreamingMovies
+- Contract
+- PaperlessBilling
+- PaymentMethod
+- MonthlyCharges
+- TotalCharges
+- Churn
+
+Valores nulos por columna (top 20):
+- customerID: 0
+- gender: 0
+- SeniorCitizen: 0
+- Partner: 0
+- Dependents: 0
+- tenure: 0
+- PhoneService: 0
+- MultipleLines: 0
+- InternetService: 0
+- OnlineSecurity: 0
+- OnlineBackup: 0
+- DeviceProtection: 0
+- TechSupport: 0
+- StreamingTV: 0
+- StreamingMovies: 0
+- Contract: 0
+- PaperlessBilling: 0
+- PaymentMethod: 0
+- MonthlyCharges: 0
+- TotalCharges: 0
+
+Duplicados totales: 0
+
+Estadistica descriptiva (numericas):
+       SeniorCitizen       tenure  MonthlyCharges
+count    7043.000000  7043.000000     7043.000000
+mean        0.162147    32.371149       64.761692
+std         0.368612    24.559481       30.090047
+min         0.000000     0.000000       18.250000
+25%         0.000000     9.000000       35.500000
+50%         0.000000    29.000000       70.350000
+75%         0.000000    55.000000       89.850000
+max         1.000000    72.000000      118.750000

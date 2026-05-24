@@ -1,0 +1,29 @@
+{
+  "rows": 3900,
+  "churn_0": 3448,
+  "churn_1": 452,
+  "churn_rate": 0.1158974358974359,
+  "numeric_features": [
+    "previous_purchases",
+    "purchase_amount_usd"
+  ],
+  "categorical_features": [
+    "age",
+    "gender",
+    "item_purchased",
+    "category",
+    "location",
+    "size",
+    "color",
+    "season",
+    "review_rating",
+    "subscription_status",
+    "payment_method",
+    "shipping_type",
+    "discount_applied",
+    "promo_code_used",
+    "preferred_payment_method",
+    "frequency_of_purchases"
+  ],
+  "best_model": "RandomForest"
+}
