@@ -10,7 +10,7 @@
 
 ### 2. Crear o seleccionar entorno de Python
 
-1. Ir a **View > Other Windows > Python Environments**.
+1. Ir a **View > Other Windows > Python Environcdments**.
 2. Crear un entorno virtual o seleccionar uno existente.
 3. Usar Python 3.10 o superior.
 
