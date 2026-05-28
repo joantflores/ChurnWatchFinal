@@ -15,7 +15,17 @@ import dash_bootstrap_components as dbc
 import joblib
 import numpy as np
 import pandas as pd
-from typing import Optional
+from typing import Any, Optional
+
+from churn_engine import (
+    CHURN_UMBRAL_ENTRENAMIENTO,
+    FREQUENCIAS_COMPRA,
+    calcular_churn_regla,
+    explicar_factores_churn,
+    normalizar_columnas_df,
+    probabilidad_desde_factores,
+    rellenar_factores_probabilidad,
+)
 
 ROOT = Path(__file__).resolve().parent
 
@@ -158,37 +168,6 @@ def landing_layout():
         ],
     )
 
-FREQ_SCORE = {
-    "weekly": 0, "biweekly": 5, "fortnightly": 5, "monthly": 15,
-    "quarterly": 55, "every 3 months": 70, "annually": 85,
-
-    # español
-    "semanal": 0, "quincenal": 5, "mensual": 15,
-    "trimestral": 55, "cada 3 meses": 70, "anual": 85,
-}
-
-def score_client(row: pd.Series) -> int:
-    """Calcula probabilidad de churn (0-99) para una fila del DataFrame."""
-    freq = str(row.get("frequency_of_purchases", "")).lower().strip()
-    prev = int(row.get("previous_purchases", 0) or 0)
-    subs = str(row.get("subscription_status", "")).lower().strip()
-    disc = str(row.get("discount_applied", "")).lower().strip()
-
-    score = FREQ_SCORE.get(freq, 30)
-    if prev <= 13:
-        score += 20
-
-    elif prev <= 25:
-        score += 8
-
-    if subs in ("no", "false", "0"):
-        score += 10
-
-    if disc in ("no", "false", "0"):
-        score += 5
-
-    return min(score, 99)
-
 def get_risk(pct: int) -> str:
     if pct >= 65:
         return "Alto"
@@ -226,36 +205,23 @@ RECOMENDACIONES = {
              "programa de fidelidad para reforzar la relación.",
 }
 
-MODEL_INFO = {"enabled": False, "mode_label": "Modo heurístico"}
-MODEL = None
-MODEL_SCALER = None
-MODEL_FEATURES: list[str] = []
-MODEL_INPUT_COLUMNS: list[str] = []
-MODEL_NUMERIC_COLUMNS: list[str] = []
-MODEL_CATEGORICAL_COLUMNS: list[str] = []
+MODEL_INFO = {"enabled": False, "mode_label": "Modo regla de negocio"}
+MODEL_PAYLOAD: dict[str, Any] = {}
+CHURN_UMBRAL = CHURN_UMBRAL_ENTRENAMIENTO
 
 try:
     model_file = ROOT / "best_model.pkl"
     if model_file.exists():
-        payload = joblib.load(model_file)
-        if isinstance(payload, dict):
-            MODEL = payload.get("modelo")
-            MODEL_SCALER = payload.get("scaler")
-            MODEL_FEATURES = payload.get("feature_columns", [])
-            MODEL_INPUT_COLUMNS = payload.get("input_columns", [])
-            MODEL_NUMERIC_COLUMNS = payload.get("numeric_features", [])
-            MODEL_CATEGORICAL_COLUMNS = payload.get("categorical_features", [])
-            model_name = payload.get("nombre", "Modelo")
-
-        else:
-            MODEL = payload
-            model_name = "Modelo"
-
-        if MODEL is not None:
+        loaded = joblib.load(model_file)
+        if isinstance(loaded, dict) and loaded.get("modelo") is not None:
+            MODEL_PAYLOAD = loaded
+            cfg = loaded.get("churn_config") or {}
+            CHURN_UMBRAL = int(cfg.get("umbral_previous_purchases", CHURN_UMBRAL_ENTRENAMIENTO))
+            model_name = loaded.get("nombre", "Modelo")
             MODEL_INFO = {"enabled": True, "mode_label": f"Modo ML: {model_name}"}
 
 except Exception:
-    MODEL_INFO = {"enabled": False, "mode_label": "Modo heurístico"}
+    MODEL_INFO = {"enabled": False, "mode_label": "Modo regla de negocio"}
 
 COL_ALIASES = {
     "customer_id":             ["customer_id", "id", "customer", "cliente", "customer id"],
@@ -270,16 +236,7 @@ COL_ALIASES = {
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Renombra columnas del archivo a los nombres estándar del sistema."""
-    rename = {}
-    lower_cols = {c.lower().strip(): c for c in df.columns}
-    for standard, aliases in COL_ALIASES.items():
-        if standard not in lower_cols:
-            for alias in aliases:
-                if alias in lower_cols:
-                    rename[lower_cols[alias]] = standard
-                    break
-
-    return df.rename(columns=rename)
+    return normalizar_columnas_df(df)
 
 def parse_file(contents: str, filename: str) -> Optional[pd.DataFrame]:
     """Decodifica y parsea el archivo subido (CSV o Excel)."""
@@ -299,80 +256,50 @@ def parse_file(contents: str, filename: str) -> Optional[pd.DataFrame]:
     except Exception:
         return None
 
-def build_results(df: pd.DataFrame, force_heuristic: bool = False) -> pd.DataFrame:
-    """Agrega columnas de prediccion al DataFrame."""
-    df = df.copy()
-    used_ml = False
-    shap_factors: list[str] = []
+def _prob_y_factores(row: pd.Series, umbral: int) -> tuple[int, str]:
+    pct = probabilidad_desde_factores(
+        row.get("frequency_of_purchases", "Monthly"),
+        row.get("previous_purchases", 0),
+        subscription=row.get("subscription_status", "Yes"),
+        discount=row.get("discount_applied", "Yes"),
+        amount=row.get("purchase_amount_usd", 60),
+        umbral=umbral,
+    )
+    txt = explicar_factores_churn(
+        row.get("frequency_of_purchases", "Monthly"),
+        row.get("previous_purchases", 0),
+        subscription=row.get("subscription_status", "Yes"),
+        discount=row.get("discount_applied", "Yes"),
+        amount=row.get("purchase_amount_usd", 60),
+        umbral=umbral,
+    )
+    return pct, txt
 
-    if MODEL_INFO["enabled"] and MODEL_INPUT_COLUMNS and not force_heuristic:
-        try:
-            model_df = pd.DataFrame(index=df.index)
-            for col in MODEL_INPUT_COLUMNS:
-                if col in df.columns:
-                    model_df[col] = df[col]
 
-                elif col in MODEL_NUMERIC_COLUMNS:
-                    model_df[col] = 0
+def build_results(df: pd.DataFrame) -> pd.DataFrame:
+    """Churn (regla) + probabilidad con 5 factores de negocio."""
+    df = rellenar_factores_probabilidad(df)
 
-                else:
-                    model_df[col] = "missing"
+    try:
+        churn_s, umbral = calcular_churn_regla(df, umbral_fijo=CHURN_UMBRAL)
+    except ValueError:
+        df["__churn_regla"] = 0
+        df["__pct"] = 0
+        df["__risk"] = "Bajo"
+        df["__name"] = df.get("customer_id", pd.Series([f"Cliente {i+1}" for i in range(len(df))])).astype(str)
+        df["__model_mode"] = "Error: faltan columnas de frecuencia o compras previas"
+        return df
 
-            for col in MODEL_NUMERIC_COLUMNS:
-                if col in model_df.columns:
-                    model_df[col] = pd.to_numeric(model_df[col], errors="coerce").fillna(0)
-
-            for col in MODEL_CATEGORICAL_COLUMNS:
-                if col in model_df.columns:
-                    model_df[col] = model_df[col].fillna("missing").astype(str)
-
-            probs = (MODEL.predict_proba(model_df)[:, 1] * 100).round().astype(int)
-            df["__pct"] = probs.clip(0, 99)
-            used_ml = True
-
-            try:
-                import shap
-
-                X_proc = MODEL.named_steps["pre"].transform(model_df)
-                feature_names = MODEL_FEATURES or [f"feature_{i}" for i in range(X_proc.shape[1])]
-                explainer = shap.Explainer(MODEL.named_steps["clf"], X_proc)
-                shap_values = explainer(X_proc)
-                values = shap_values.values
-
-                if values.ndim == 3:
-                    values = values[:, :, 1]
-
-                for i in range(len(model_df)):
-                    row_vals = values[i]
-                    top_idx = np.argsort(np.abs(row_vals))[-3:][::-1]
-                    parts = []
-
-                    for idx in top_idx:
-                        feat = feature_names[idx] if idx < len(feature_names) else f"feature_{idx}"
-                        val = row_vals[idx]
-                        sign = "+" if val >= 0 else "-"
-                        parts.append(f"{feat} ({sign}{abs(val):.3f})")
-
-                    shap_factors.append(" | ".join(parts))
-
-            except Exception:
-                shap_factors = []
-
-        except Exception:
-            used_ml = False
-
-    if not used_ml:
-        df["__pct"] = df.apply(score_client, axis=1)
-
+    df["__churn_regla"] = churn_s.values
+    prob_fact = df.apply(lambda r: _prob_y_factores(r, umbral), axis=1)
+    df["__pct"] = prob_fact.apply(lambda x: x[0])
+    df["__factors"] = prob_fact.apply(lambda x: x[1])
     df["__risk"] = df["__pct"].apply(get_risk)
-    df["__name"] = df.get("customer_id", pd.Series(
-        [f"Cliente {i+1}" for i in range(len(df))]
-    )).fillna("—").astype(str)
-
-    if len(shap_factors) == len(df):
-        df["__factors"] = shap_factors
-
-    df["__model_mode"] = MODEL_INFO["mode_label"] if used_ml else "Modo regla de negocio"
+    df["__name"] = df.get(
+        "customer_id",
+        pd.Series([f"Cliente {i+1}" for i in range(len(df))]),
+    ).fillna("—").astype(str)
+    df["__model_mode"] = ""
     return df
 
 def topnav() -> html.Div:
@@ -412,9 +339,11 @@ def upload_zone() -> html.Div:
                     html.Div("Sube los datos de tus clientes",
                              style={"fontSize": "16px", "fontWeight": "500",
                                     "color": TEXT_PRI, "marginBottom": "4px"}),
-                    html.Div("El sistema analizará cada cliente y calculará "
-                             "su probabilidad de abandono.",
-                             style={"fontSize": "13px", "color": TEXT_SEC}),
+                    html.Div(
+                        "La probabilidad usa: frecuencia, compras previas, suscripción, "
+                        "descuento y monto (USD).",
+                        style={"fontSize": "13px", "color": TEXT_SEC},
+                    ),
                 ],
             ),
 
@@ -482,12 +411,12 @@ def upload_zone() -> html.Div:
                                 },
                             )
                             for col, desc in [
-                                ("customer_id",            "ID o nombre"),
-                                ("frequency_of_purchases", "Weekly, Monthly…"),
-                                ("previous_purchases",     "Núm. de compras"),
+                                ("frequency_of_purchases", "Frecuencia · Weekly… Annually"),
+                                ("previous_purchases",     "Cantidad de compras"),
                                 ("subscription_status",    "Yes / No"),
-                                ("purchase_amount_usd",    "Monto en USD"),
                                 ("discount_applied",       "Yes / No"),
+                                ("purchase_amount_usd",    "Monto total USD"),
+                                ("customer_id",            "Opcional · ID"),
                             ]
                         ],
                     ),
@@ -677,15 +606,9 @@ def manual_entry_section() -> html.Div:
                         html.Label("Frecuencia de compra", style={"fontSize": "12px", "color": TEXT_SEC}),
                         dcc.Dropdown(
                             id="manual-freq",
-                            options=[
-                                {"label": "Semanal (Weekly)", "value": "weekly"},
-                                {"label": "Mensual (Monthly)", "value": "monthly"},
-                                {"label": "Trimestral (Quarterly)", "value": "quarterly"},
-                                {"label": "Cada 3 meses (Every 3 months)", "value": "every 3 months"},
-                                {"label": "Anual (Annually)", "value": "annually"}
-                            ],
-                            value="monthly",
-                            clearable=False
+                            options=[{"label": f, "value": f} for f in FREQUENCIAS_COMPRA],
+                            value="Monthly",
+                            clearable=False,
                         )
                     ]),
                     html.Div([
@@ -811,7 +734,7 @@ def process_upload(contents, filename):
         {"display": "none"},          
         {"display": "block"},         
         filename,
-        f"{len(records)} clientes analizados · {records[0].get('__model_mode', 'Modo heurístico')}",
+        f"{len(records)} clientes analizados",
         pills,
     )
 
@@ -1048,7 +971,7 @@ def open_modal(n_clicks_list, records):
         (
             RECOMENDACIONES.get(risk, "")
             if not row.get("__factors")
-            else f"{RECOMENDACIONES.get(risk, '')}\n\nFactores SHAP: {row.get('__factors')}"
+            else f"{RECOMENDACIONES.get(risk, '')}\n\nFactores: {row.get('__factors')}"
         ),
     )
 
@@ -1075,14 +998,11 @@ def process_manual(n_clicks, freq, prev, amount, subs, disc):
         "discount_applied": disc
     }])
     
-    # En ingreso manual solo hay 5 variables. La regla de negocio responde mejor
-    # a cambios puntuales que el modelo completo entrenado con muchas columnas.
-    res_df = build_results(df, force_heuristic=True)
+    res_df = build_results(df)
     row = res_df.iloc[0]
     
     pct = row.get("__pct", 0)
     risk = row.get("__risk", "Bajo")
-    mode = row.get("__model_mode", "Modo heurístico")
     factors = row.get("__factors", "")
     
     risk_colors = {
@@ -1094,15 +1014,12 @@ def process_manual(n_clicks, freq, prev, amount, subs, disc):
     
     rec = RECOMENDACIONES.get(risk, "")
     if factors:
-        rec += f"\n\nFactores SHAP: {factors}"
+        rec += f"\n\nFactores: {factors}"
         
     return html.Div(
         style={"background": BG_CARD, "border": BORDER, "borderRadius": "12px", "padding": "1.5rem", "animation": "fadeIn 0.5s ease-in"},
         children=[
-            html.Div([
-                html.Span("Resultado del Análisis", style={"fontSize": "15px", "fontWeight": "500", "color": TEXT_PRI}),
-                html.Span(f" ({mode})", style={"fontSize": "12px", "color": TEXT_SEC, "marginLeft": "8px"})
-            ], style={"marginBottom": "1rem"}),
+            html.Div("Resultado del análisis", style={"fontSize": "15px", "fontWeight": "500", "color": TEXT_PRI, "marginBottom": "1rem"}),
             html.Div(
                 style={"display": "flex", "alignItems": "center", "gap": "1rem", "marginBottom": "1.5rem"},
                 children=[

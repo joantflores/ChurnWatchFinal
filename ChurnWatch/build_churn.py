@@ -7,47 +7,24 @@ churn = 1 si el cliente tiene baja frecuencia de compra
 """
 
 from pathlib import Path
-import pandas as pd
-from typing import Optional
 
+import pandas as pd
+
+from churn_engine import (
+    CHURN_UMBRAL_ENTRENAMIENTO,
+    calcular_churn_regla,
+    normalizar_columnas_df,
+)
 
 ROOT = Path(__file__).resolve().parent
 INFILE = ROOT / "shopping_trends.csv"
 OUTFILE = ROOT / "shopping_trends_churn.csv"
-LOW_FREQUENCY = {"annually", "every 3 months", "quarterly"}
 
 
-def canonical_name(column: str) -> str:
-    return (
-        column.lower()
-        .strip()
-        .replace(" ", "_")
-        .replace("-", "_")
-        .replace("(", "")
-        .replace(")", "")
-    )
-
-
-def normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [canonical_name(c) for c in df.columns]
-    return df
-
-
-def build_churn(df: pd.DataFrame, p25: Optional[int] = None) -> pd.DataFrame:
-    df = df.copy()
-    df = normalize_cols(df)
-    required = {"frequency_of_purchases", "previous_purchases"}
-    missing = sorted(required - set(df.columns))
-    if missing:
-        raise ValueError(f"Columnas requeridas faltantes: {missing}")
-
-    prev = pd.to_numeric(df["previous_purchases"], errors="coerce").fillna(0)
-    if p25 is None:
-        p25 = int(prev.quantile(0.25))
-    freq = df["frequency_of_purchases"].astype(str).str.lower().str.strip()
-    churn = ((freq.isin(LOW_FREQUENCY)) & (prev <= p25)).astype(int)
-    df["churn"] = churn
+def build_churn(df: pd.DataFrame, p25: int | None = CHURN_UMBRAL_ENTRENAMIENTO) -> pd.DataFrame:
+    df = normalizar_columnas_df(df)
+    churn, _ = calcular_churn_regla(df, umbral_fijo=p25)
+    df["churn"] = churn.values
     return df
 
 

@@ -178,8 +178,12 @@ def fit_and_eval(X, y, preproc, num_cols, cat_cols):
             "confusion_matrix": confusion_matrix(y_test, preds, labels=[0, 1]).tolist(),
         }
 
-    # choose best by roc_auc
-    best_name = max(results.keys(), key=lambda k: results[k]["roc_auc"])
+    # Mejor modelo: ROC-AUC, desempate por F1 (favorece XGBoost si empata con RF)
+    def _rank(name: str) -> tuple:
+        r = results[name]
+        return (r["roc_auc"], r["f1"], r["recall"])
+
+    best_name = max(results.keys(), key=_rank)
     best_model = models[best_name]
 
     # save model and meta
@@ -195,6 +199,8 @@ def fit_and_eval(X, y, preproc, num_cols, cat_cols):
         cat_names = []
     feature_columns = list(num_features) + cat_names
 
+    from churn_engine import BAJA_FRECUENCIA_CANON, CHURN_UMBRAL_ENTRENAMIENTO
+
     payload = {
         "modelo": best_model,
         "scaler": None,
@@ -203,6 +209,10 @@ def fit_and_eval(X, y, preproc, num_cols, cat_cols):
         "numeric_features": list(num_cols),
         "categorical_features": list(cat_cols),
         "nombre": best_name,
+        "churn_config": {
+            "umbral_previous_purchases": CHURN_UMBRAL_ENTRENAMIENTO,
+            "baja_frecuencia": sorted(BAJA_FRECUENCIA_CANON),
+        },
     }
 
     joblib.dump(payload, ROOT / "best_model.pkl")
