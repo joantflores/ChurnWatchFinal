@@ -1,18 +1,3 @@
-"""
-ChurnWatch - EDA multi-dataset for Avance 2.
-
-Genera analisis exploratorio para:
-1) Customer Shopping Trends
-2) Online Retail II (si el archivo existe)
-3) Telco Customer Churn
-
-Salida:
-- outputs/eda/<dataset>/summary.txt
-- outputs/eda/<dataset>/hist_*.png
-- outputs/eda/<dataset>/box_*.png
-- outputs/eda/<dataset>/top_categories_*.png
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,14 +30,11 @@ def read_dataset(path: Path) -> pd.DataFrame:
         return pd.read_excel(path)
     raise ValueError(f"Formato no soportado: {path.name}")
 
-
 def safe_numeric_columns(df: pd.DataFrame) -> list[str]:
     return df.select_dtypes(include=["number"]).columns.tolist()
 
-
 def safe_categorical_columns(df: pd.DataFrame) -> list[str]:
     return df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
-
 
 def write_summary(df: pd.DataFrame, dataset_name: str, out_dir: Path) -> None:
     nulls = df.isnull().sum().sort_values(ascending=False)
@@ -77,7 +59,6 @@ def write_summary(df: pd.DataFrame, dataset_name: str, out_dir: Path) -> None:
         lines.append("No hay columnas numericas.")
 
     (out_dir / "summary.txt").write_text("\n".join(lines), encoding="utf-8")
-
 
 def plot_numeric_distributions(df: pd.DataFrame, out_dir: Path, focus_cols: Iterable[str] | None = None) -> None:
     numeric_cols = safe_numeric_columns(df)
@@ -106,7 +87,6 @@ def plot_numeric_distributions(df: pd.DataFrame, out_dir: Path, focus_cols: Iter
         plt.savefig(out_dir / f"box_{col}.png", dpi=140)
         plt.close()
 
-
 def plot_top_categories(df: pd.DataFrame, out_dir: Path) -> None:
     cat_cols = safe_categorical_columns(df)[:6]
     for col in cat_cols:
@@ -119,7 +99,6 @@ def plot_top_categories(df: pd.DataFrame, out_dir: Path) -> None:
         plt.tight_layout()
         plt.savefig(out_dir / f"top_categories_{col}.png", dpi=140)
         plt.close()
-
 
 def telco_churn_distribution(df: pd.DataFrame, out_dir: Path) -> None:
     churn_col = None
@@ -138,7 +117,6 @@ def telco_churn_distribution(df: pd.DataFrame, out_dir: Path) -> None:
     plt.tight_layout()
     plt.savefig(out_dir / "churn_distribution.png", dpi=140)
     plt.close()
-
 
 def run() -> None:
     ensure_dir(OUTPUT_ROOT)
@@ -168,7 +146,6 @@ def run() -> None:
             telco_churn_distribution(df, out_dir)
 
     print(f"EDA completado. Revisa: {OUTPUT_ROOT}")
-
 
 if __name__ == "__main__":
     run()
